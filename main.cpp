@@ -4,6 +4,10 @@
 #include<fstream>
 #include<set>
 #include<cmath>
+#include "CppSockets/sockets/TcpServerSocket.hpp"
+#include<future>
+#include<thread>
+#include<string>
 
 #define NOGUI false
 #define screenScale 300
@@ -35,15 +39,31 @@ struct Robot {
     void move(double X, double Y, double maxX, double maxY) {
         x += X * cos(angle) + Y * sin(angle);
         y += -X * sin(angle) + Y * cos(angle);
-        if(x < 0)
+        if (x < 0)
             x = 0;
-        if(y < 0)
+        if (y < 0)
             y = 0;
-        if(x > maxX + 1.2)
+        if (x > maxX + 1.2)
             x = maxX + 1.2;
-        if(y > maxY + 1.2)
+        if (y > maxY + 1.2)
             y = maxY + 1.2;
     }
+
+    void socket(int z) {
+        TcpServerSocket server("localhost", z);
+        server.acceptConnection();
+        char o[100];
+        char o1[100];
+        while (true) {
+            server.receiveData(o, 100);
+            if (o != o1) {
+                int k = std::stoi(o);
+                x += k;
+            }
+        }
+    }
+
+
 };
 
 struct Line {
@@ -211,6 +231,9 @@ struct Field {
     }
 };
 
+void Socket(Robot &robot, int z) {
+    robot.socket(z);
+}
 
 int main() {
     Field field("../file.json");
@@ -219,12 +242,13 @@ int main() {
     robot.color = sf::Color::Red;
     Robot robot1;
     robot1.color = sf::Color::Blue;
-
+    std::thread t(Socket, std::ref(robot), 5000);
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed)
                 window.close();
+            /*
             else if (event.type == sf::Event::KeyPressed) {
                 if (event.key.code == sf::Keyboard::S) {
                     robot.move(0, -0.01, field.xSize / field.scale, field.ySize / field.scale);
@@ -235,7 +259,7 @@ int main() {
                 if (event.key.code == sf::Keyboard::D) {
                     robot.move(-0.01, 0, field.xSize / field.scale, field.ySize / field.scale);
                 }
-                if (event.key.code == sf::Keyboard::A){
+                if (event.key.code == sf::Keyboard::A) {
                     robot.move(0.01, 0, field.xSize / field.scale, field.ySize / field.scale);
                 }
                 if (event.key.code == sf::Keyboard::Right) {
@@ -245,7 +269,7 @@ int main() {
                     robot.rotate(0.05);
                 }
 
-            }
+            }*/
         }
 
         field.drawField(window);
