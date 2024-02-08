@@ -8,9 +8,15 @@
 #include<future>
 #include<thread>
 #include<string>
+#include<sstream>
+#include <chrono>
 
 #define NOGUI false
 #define screenScale 300
+
+std::chrono::milliseconds pms = duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+);
 
 int get_sign(double x) {
     if (x > 0)
@@ -21,7 +27,7 @@ int get_sign(double x) {
 }
 
 struct Robot {
-    double x = 0.1, y = 0.1, ax = 0, ay = 0, angle = 0;
+    double x = 0.1, y = 0.1, px = 0, py = 0, angle = 0;
     sf::Color color = sf::Color::White;
 
     Robot() {};
@@ -37,6 +43,8 @@ struct Robot {
     }
 
     void move(double X, double Y, double maxX, double maxY) {
+        px = x;
+        py = y;
         x += X * cos(angle) + Y * sin(angle);
         y += -X * sin(angle) + Y * cos(angle);
         if (x < 0)
@@ -50,17 +58,25 @@ struct Robot {
     }
 
     void socket(int z) {
+
         TcpServerSocket server("localhost", z);
         server.acceptConnection();
+        std::cout << z << "\n";
+        std::cout << "OK\n";
         char o[100];
-        char o1[100];
         while (true) {
             server.receiveData(o, 100);
-            if (o != o1) {
-                int k = std::stoi(o);
-                x += k;
-            }
+            if (o[0] == 'q')
+                break;
+            std::cout << o << "\n";
+            std::stringstream s(o);
+            double _x, _y, _a;
+            s >> _x >> _y >> _a;
+            x += _x;
+            y += _y;
+            angle += _a;
         }
+
     }
 
 
@@ -116,6 +132,57 @@ struct Line {
         o << l.x1 << " " << l.y1 << "|" << l.x2 << " " << l.y2 << std::endl;
         return o;
     }
+};
+
+struct Ball {
+    double x, y, ax, ay, sx, sy;
+    sf::Color color;
+
+    Ball(double _x, double _y) : x(_x), y(_y) {}
+
+    void tick() {
+        bool check = false;
+        x += ax;
+        y += ay;
+        ax /= 1.1;
+        ay /= 1.1;
+        /*
+        if (check)
+            std::cout << "\n";
+            */
+    }
+
+    void check_robot(Robot &robot, int size) {
+        if (sqrt(pow(robot.x - x, 2) + pow(robot.y - y, 2)) <= (double) 15 / size) {
+            ax += (robot.x - robot.px) * 10;
+            ay += (robot.y - robot.py) * 10;
+            //std::cout<<"YES|"<<ax<<"|"<<ay<<"\n";
+        }
+    }
+
+    void check_borders(int xSize, int ySize, int scale) {
+        if (x >= (double)xSize / scale + 0.1) {
+            ax *= -1;
+            ay *= 1;
+            std::cout<<"border\n";
+        }
+        if (y >= (double)ySize / scale + 0.1) {
+            ax *= 1;
+            ay *= -1;
+            std::cout<<"border\n";
+        }
+        if (x <= 0.1) {
+            ax *= -1;
+            ay *= 1;
+            std::cout<<"border\n";
+        }
+        if (y <= 0.1) {
+            ax *= 1;
+            ay *= -1;
+            std::cout<<"border\n";
+        }
+    }
+
 };
 
 struct Field {
@@ -223,12 +290,22 @@ struct Field {
         window.draw(R);
         sf::VertexArray line(sf::Lines, 2);
         line[0] = sf::Vector2f(robot.x * scale, robot.y * scale);
-        line[1] = sf::Vector2f(robot.x * scale + 50 * sin(robot.angle), robot.y * scale + 50 * cos(robot.angle));
+        line[1] = sf::Vector2f(robot.x * scale + 50 * sin(robot.angle),
+                               robot.y * scale + 50 * cos(robot.angle));
         line[0].color = robot.color;
         line[1].color = sf::Color::Red;
         window.draw(line);
 
     }
+
+    void drawBall(Ball &ball, sf::RenderWindow &window) {
+        sf::CircleShape R;
+        R.setRadius(5);
+        R.setPosition(ball.x * scale - 10, ball.y * scale - 10);
+        R.setFillColor(ball.color);
+        window.draw(R);
+    }
+
 };
 
 void Socket(Robot &robot, int z) {
@@ -237,18 +314,25 @@ void Socket(Robot &robot, int z) {
 
 int main() {
     Field field("../file.json");
-    sf::RenderWindow window(field.getWindowSize(), "Robofootbal ZV");
+    sf::RenderWindow window(field.getWindowSize(), "Robofootbal ");
+
     Robot robot;
     robot.color = sf::Color::Red;
     Robot robot1;
     robot1.color = sf::Color::Blue;
-    std::thread t(Socket, std::ref(robot), 5000);
+    //std::thread t(Socket, std::ref(robot), 5040);
+
+    Ball ball(0.2, 0.2);
+    //ball.ax = 0.1;
+    //sball.ay = 0.1;
+    ball.color = sf::Color::Yellow;
     while (window.isOpen()) {
+
         sf::Event event;
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed)
                 window.close();
-            /*
+
             else if (event.type == sf::Event::KeyPressed) {
                 if (event.key.code == sf::Keyboard::S) {
                     robot.move(0, -0.01, field.xSize / field.scale, field.ySize / field.scale);
@@ -269,13 +353,31 @@ int main() {
                     robot.rotate(0.05);
                 }
 
-            }*/
+            }
+
         }
 
         field.drawField(window);
         field.drawRobot(robot, window);
         field.drawRobot(robot1, window);
+        ball.tick();
+        ball.check_robot(robot, field.scale);
+        field.drawBall(ball, window);
+        ball.check_borders(field.xSize, field.ySize, field.scale);
         window.display();
+
+        std::chrono::milliseconds ms = duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+        );
+        while ((ms - pms).count() <= 1000 / 60) {
+            ms = duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+            );
+
+        }
+        pms = duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+        );
 
     }
 }
